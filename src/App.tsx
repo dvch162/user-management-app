@@ -1,92 +1,93 @@
-// import  { useState, useEffect } from 'react';
-// import { observer } from 'mobx-react-lite';
-// import { getSnapshot } from 'mobx-state-tree';
-// import UserStore from './UserStore';
-
-
 import './App.css'
-import  { useEffect } from 'react';
+import React, { useEffect } from 'react';
+import axios from 'axios';
 import { observer } from 'mobx-react-lite';
-import { types, flow, Instance } from 'mobx-state-tree';
+import { useLocalObservable } from 'mobx-react-lite';
+import { v4 as uuidv4 } from 'uuid';
 
-interface UserData {
-  id: number;
-  name: string;
-  username: string;
-  isBlocked: boolean;
-}
 
-const User = types
-  .model('User', {
-    id: types.identifierNumber,
-    name: types.string,
-    username: types.string,
-    isBlocked: types.optional(types.boolean, false),
-  })
-  .actions(self => ({
-    editUserName(newName: string) {
-      self.name = newName;
-    },
-    toggleBlockUser() {
-      self.isBlocked = !self.isBlocked;
-    },
-  }));
+import { UserStore, IUserStore } from './UserStore'; 
 
-const UserStore = types
-  .model('UserStore', {
-    users: types.array(User),
-  })
-  .actions(self => ({
-    addUser(user: Instance<typeof User>) {
-      self.users.push(user);
-    },
-    deleteUser(userId: number) {
-      const index = self.users.findIndex(user => user.id === userId);
-      if (index !== -1) {
-        self.users.splice(index, 1);
-      }
-    },
-  }))
-  .actions(self => ({
-    loadUsers: flow(function* () {
-      try {
-        const response = yield fetch('https://jsonplaceholder.typicode.com/users');
-        const users: UserData[] = yield response.json();
 
-        users.forEach(userData => {
-          const newUser = User.create(userData);
-          self.addUser(newUser);
-        });
-      } catch (error) {
-        console.error('Error loading users:', error);
-      }
-    }),
-  }));
+const App = () => {
+  
+  const userStore = useLocalObservable<IUserStore>(() => UserStore.create({ users: [] }));
 
-const App = observer(() => {
-  const userStore = UserStore.create({ users: [] });
+
 
   useEffect(() => {
-    userStore.loadUsers();
-  }, [userStore]);
+    console.log('Component is mounting or re-rendering.');
+    axios.get('https://jsonplaceholder.typicode.com/users')
+      .then(response => {
+        console.log('Data fetched successfully:', response.data); 
+
+        const userList = response.data;
+        userList.forEach(user => {
+          userStore.addUser(user.id, user.name.toString(), user.username);
+
+        });
+      })
+      .catch(error => {
+        console.error('Помилка завантаження даних:', error);
+      });
+}, []);
+console.log('Component re-render'); // Log re-renders
+
+
+  const handleAddUser = () => {
+    const newUser = {
+      id: Date.now().toString(),
+      name: 'New User',
+      username: 'newuser',
+    };
+    userStore.addUser(parseInt(newUser.id, 10), newUser.name, newUser.username);
+  };
+
+  const handleRemoveUser = user => {
+    if (!user.isBlocked) {
+      userStore.removeUser(user);
+    }
+  };
 
   return (
     <div>
-      <h1>User List</h1>
+      <h2>Список користувачів</h2>
       <ul>
-        {userStore.users.map(user => (
-          <li key={user.id}>
-            <strong>{user.name}</strong> ({user.username})
-            <button onClick={() => user.editUserName('New Name')}>Edit</button>
-            <button onClick={() => userStore.deleteUser(user.id)}>Delete</button>
-            <button onClick={() => user.toggleBlockUser()}>
-              {user.isBlocked ? 'Unblock' : 'Block'}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-});
+        {userStore.users.map((user) => (
+          // <li key={user.id}>
+          <li key={uuidv4()}>
+ {user.isBlocked ? (
+  <div>
+    <strong>{user.name}</strong> ({user.username})
+    <button onClick={() => user.toggleBlock()}>Blocked</button>
+  </div>
+) :  user.isEditing ? (
+            <div>
+              <input
+                type="text"
+                value={user.editedName}
+                // onChange={(e) => userStore.updateName(user, e.target.value)}
+                onChange={(e) => user.setName(e.target.value)}
+              />
+              {/* <button onClick={() => userStore.updateName(user, user.name)}>Save</button> */}
+              <button onClick={() => userStore.updateName(user)}>Save</button>
+            </div>
+          ) : (
+            <div>
+              <strong>{user.name}</strong> ({user.username})
+              <button onClick={() => userStore.toggleEdit(user)}>Редагувати</button>
+              <button onClick={() => handleRemoveUser(user)}>Видалити</button>
+              <button onClick={() => user.toggleBlock()}>
+      {user.isBlocked ? 'Unblock' : 'Block'}
+    </button>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+    <button onClick={handleAddUser}>Додати користувача</button>
+  </div>
+);
+};
 
-export default App;
+export default observer(App);
